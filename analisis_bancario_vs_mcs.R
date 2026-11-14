@@ -566,3 +566,417 @@ write.csv(
 
 # Mostrar los archivos generados.
 list.files("resultados")
+
+# PARTE 4: ROBUSTEZ Y EVALUACION PREDICTIVA
+
+# 1. INSTALAR Y CARGAR LIBRERIAS
+
+# Instalar lmtest si no esta instalada.
+if (!requireNamespace("lmtest", quietly = TRUE)) {
+  install.packages("lmtest")
+}
+
+# Instalar sandwich si no esta instalada.
+if (!requireNamespace("sandwich", quietly = TRUE)) {
+  install.packages("sandwich")
+}
+
+# Instalar ggplot2 si no esta instalada.
+if (!requireNamespace("ggplot2", quietly = TRUE)) {
+  install.packages("ggplot2")
+}
+
+# Cargar las librerias necesarias.
+library(lmtest)
+library(sandwich)
+library(ggplot2)
+
+# Crear la carpeta para guardar resultados.
+dir.create("resultados", showWarnings = FALSE)
+
+
+# 2. PRUEBA DE BREUSCH-PAGAN
+
+# Evaluar heterocedasticidad en el MPL simple.
+bp_simple <- bptest(mpl_simple)
+
+# Mostrar el resultado de la prueba.
+print(bp_simple)
+
+# Evaluar heterocedasticidad en el MPL con controles.
+bp_controles <- bptest(mpl_controles)
+
+# Mostrar el resultado de la prueba.
+print(bp_controles)
+
+
+# 3. CALCULAR ERRORES ESTANDAR ROBUSTOS
+
+# Calcular errores robustos HC1 para el MPL simple.
+robusto_mpl_simple <- coeftest(
+  mpl_simple,
+  vcov. = vcovHC(mpl_simple, type = "HC1")
+)
+
+# Mostrar los resultados del MPL simple.
+print(robusto_mpl_simple)
+
+# Calcular errores robustos HC1 para el MPL con controles.
+robusto_mpl_controles <- coeftest(
+  mpl_controles,
+  vcov. = vcovHC(mpl_controles, type = "HC1")
+)
+
+# Mostrar los resultados robustos.
+print(robusto_mpl_controles)
+
+
+# 4. CORRECCION PARA GUARDAR LOS ERRORES ROBUSTOS
+
+# Convertir los resultados robustos en una matriz.
+matriz_robusta <- as.matrix(robusto_mpl_controles)
+
+# Crear una tabla con los coeficientes robustos.
+tabla_robusta <- data.frame(
+  Variable = rownames(matriz_robusta),
+  Coeficiente = matriz_robusta[, 1],
+  Error_Robusto = matriz_robusta[, 2],
+  Estadistico_t = matriz_robusta[, 3],
+  Valor_p = matriz_robusta[, 4],
+  row.names = NULL
+)
+
+# Mostrar la tabla corregida.
+print(tabla_robusta)
+
+# Guardar los resultados robustos en CSV.
+write.csv(
+  tabla_robusta,
+  "resultados/mpl_errores_robustos.csv",
+  row.names = FALSE
+)
+
+
+# 5. GRAFICO DE RESIDUOS DEL MPL
+
+# Crear una tabla de valores estimados y residuos.
+datos_residuos <- data.frame(
+  Estimado = fitted(mpl_controles),
+  Residuo = residuals(mpl_controles)
+)
+
+# Crear el grafico de residuos.
+grafico_residuos <- ggplot(
+  datos_residuos,
+  aes(x = Estimado, y = Residuo)
+) +
+  geom_point(alpha = 0.15, color = "steelblue") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Residuos del modelo MPL",
+    x = "Probabilidad estimada",
+    y = "Residuo"
+  ) +
+  theme_minimal()
+
+# Mostrar el grafico.
+print(grafico_residuos)
+
+# Guardar el grafico.
+ggsave(
+  "resultados/grafico_residuos_mpl.png",
+  plot = grafico_residuos,
+  width = 8,
+  height = 5
+)
+
+
+# 6. CALCULAR PREDICCIONES
+
+# Predecir con el MPL simple.
+pred_mpl_simple <- predict(
+  mpl_simple,
+  newdata = prueba
+)
+
+# Predecir con el MPL con controles.
+pred_mpl <- predict(
+  mpl_controles,
+  newdata = prueba
+)
+
+# Predecir con el Logit simple.
+pred_logit_simple <- predict(
+  logit_simple,
+  newdata = prueba,
+  type = "response"
+)
+
+# Predecir con el Logit con controles.
+pred_logit <- predict(
+  logit_controles,
+  newdata = prueba,
+  type = "response"
+)
+
+# Guardar los valores reales de aceptacion.
+real <- prueba$acepta
+
+# Limitar las predicciones MPL entre 0 y 1.
+pred_mpl_simple <- pmin(pmax(pred_mpl_simple, 0), 1)
+pred_mpl <- pmin(pmax(pred_mpl, 0), 1)
+
+
+# 7. CALCULAR ERRORES AL CUADRADO
+
+# Calcular los errores cuadrados del MPL simple.
+error_mpl_simple <- (real - pred_mpl_simple)^2
+
+# Calcular los errores cuadrados del MPL con controles.
+error_mpl <- (real - pred_mpl)^2
+
+# Calcular los errores cuadrados del Logit simple.
+error_logit_simple <- (real - pred_logit_simple)^2
+
+# Calcular los errores cuadrados del Logit con controles.
+error_logit <- (real - pred_logit)^2
+
+# Calcular el error cuadratico medio de cada modelo.
+mse_mpl_simple <- mean(error_mpl_simple)
+mse_mpl <- mean(error_mpl)
+mse_logit_simple <- mean(error_logit_simple)
+mse_logit <- mean(error_logit)
+
+# Mostrar los resultados.
+mse_mpl_simple
+mse_mpl
+mse_logit_simple
+mse_logit
+
+
+# 8. COMPARAR LOS CUATRO MODELOS
+
+# Crear una tabla con los errores de prediccion.
+tabla_comparacion <- data.frame(
+  Modelo = c(
+    "MPL simple",
+    "MPL con controles",
+    "Logit simple",
+    "Logit con controles"
+  ),
+  MSE = c(
+    mse_mpl_simple,
+    mse_mpl,
+    mse_logit_simple,
+    mse_logit
+  )
+)
+
+# Ordenar los modelos de menor a mayor error.
+tabla_comparacion <- tabla_comparacion[
+  order(tabla_comparacion$MSE), ]
+
+# Mostrar la tabla de comparacion.
+print(tabla_comparacion)
+
+# Guardar la tabla en CSV.
+write.csv(
+  tabla_comparacion,
+  "resultados/comparacion_modelos.csv",
+  row.names = FALSE
+)
+
+
+# 9. CREAR MATRICES DE CONFUSION
+
+# Establecer un umbral inicial de clasificacion.
+umbral <- 0.5
+
+# Clasificar las predicciones del MPL.
+clase_mpl <- ifelse(pred_mpl >= umbral, 1, 0)
+
+# Clasificar las predicciones del Logit.
+clase_logit <- ifelse(pred_logit >= umbral, 1, 0)
+
+# Crear la matriz de confusion del MPL.
+matriz_mpl <- table(
+  Real = factor(real, levels = c(0, 1)),
+  Predicho = factor(clase_mpl, levels = c(0, 1))
+)
+
+# Mostrar la matriz del MPL.
+print(matriz_mpl)
+
+# Crear la matriz de confusion del Logit.
+matriz_logit <- table(
+  Real = factor(real, levels = c(0, 1)),
+  Predicho = factor(clase_logit, levels = c(0, 1))
+)
+
+# Mostrar la matriz del Logit.
+print(matriz_logit)
+
+
+# 10. CALCULAR INDICADORES DE CLASIFICACION
+
+# Crear una funcion para calcular indicadores.
+calcular_metricas <- function(real, predicho) {
+  
+  # Contar verdaderos positivos.
+  VP <- sum(real == 1 & predicho == 1)
+  
+  # Contar verdaderos negativos.
+  VN <- sum(real == 0 & predicho == 0)
+  
+  # Contar falsos positivos.
+  FP <- sum(real == 0 & predicho == 1)
+  
+  # Contar falsos negativos.
+  FN <- sum(real == 1 & predicho == 0)
+  
+  # Calcular exactitud.
+  exactitud <- (VP + VN) / length(real)
+  
+  # Calcular sensibilidad.
+  sensibilidad <- if (VP + FN > 0) {
+    VP / (VP + FN)
+  } else {
+    NA_real_
+  }
+  
+  # Calcular precision.
+  precision <- if (VP + FP > 0) {
+    VP / (VP + FP)
+  } else {
+    NA_real_
+  }
+  
+  # Devolver los indicadores.
+  return(c(
+    Exactitud = exactitud,
+    Sensibilidad = sensibilidad,
+    Precision = precision
+  ))
+}
+
+# Calcular los indicadores del MPL.
+metricas_mpl <- calcular_metricas(real, clase_mpl)
+
+# Calcular los indicadores del Logit.
+metricas_logit <- calcular_metricas(real, clase_logit)
+
+# Crear una tabla de comparacion.
+tabla_metricas <- data.frame(
+  Modelo = c("MPL con controles", "Logit con controles"),
+  Exactitud = c(metricas_mpl["Exactitud"],
+                metricas_logit["Exactitud"]),
+  Sensibilidad = c(metricas_mpl["Sensibilidad"],
+                   metricas_logit["Sensibilidad"]),
+  Precision = c(metricas_mpl["Precision"],
+                metricas_logit["Precision"])
+)
+
+# Mostrar la tabla de indicadores.
+print(tabla_metricas)
+
+# Guardar la tabla de indicadores.
+write.csv(
+  tabla_metricas,
+  "resultados/metricas_clasificacion.csv",
+  row.names = FALSE
+)
+
+
+# 11. COMPARAR VALORES REALES Y PREDICHOS
+
+# Crear una tabla con las predicciones individuales.
+tabla_predicciones <- data.frame(
+  Real = real,
+  MPL = pred_mpl,
+  Logit = pred_logit
+)
+
+# Mostrar las primeras observaciones.
+head(tabla_predicciones)
+
+# Guardar la tabla de predicciones.
+write.csv(
+  tabla_predicciones,
+  "resultados/predicciones_modelos.csv",
+  row.names = FALSE
+)
+
+
+# 12. GRAFICO DE PREDICCIONES
+
+# Crear un grafico de aceptacion real y estimada.
+grafico_predicciones <- ggplot(
+  tabla_predicciones,
+  aes(x = Logit, y = Real)
+) +
+  geom_jitter(
+    height = 0.05,
+    width = 0,
+    alpha = 0.12,
+    color = "steelblue"
+  ) +
+  labs(
+    title = "Aceptacion real frente a probabilidad estimada",
+    x = "Probabilidad estimada con Logit",
+    y = "Aceptacion real: 0 = No, 1 = Si"
+  ) +
+  theme_minimal()
+
+# Mostrar el grafico.
+print(grafico_predicciones)
+
+# Guardar el grafico.
+ggsave(
+  "resultados/grafico_predicciones.png",
+  plot = grafico_predicciones,
+  width = 8,
+  height = 5
+)
+
+
+# 13. GRAFICO DE ERRORES AL CUADRADO
+
+# Crear una tabla de errores.
+tabla_errores <- data.frame(
+  MPL = error_mpl,
+  Logit = error_logit
+)
+
+# Crear un histograma de errores del Logit.
+grafico_errores <- ggplot(
+  tabla_errores,
+  aes(x = Logit)
+) +
+  geom_histogram(
+    bins = 30,
+    fill = "steelblue",
+    color = "white"
+  ) +
+  labs(
+    title = "Distribucion de errores cuadrados del Logit",
+    x = "Error al cuadrado",
+    y = "Numero de clientes"
+  ) +
+  theme_minimal()
+
+# Mostrar el grafico.
+print(grafico_errores)
+
+# Guardar el grafico.
+ggsave(
+  "resultados/grafico_errores.png",
+  plot = grafico_errores,
+  width = 8,
+  height = 5
+)
+
+
+# 14. VERIFICAR LOS RESULTADOS
+
+# Mostrar todos los archivos generados.
+list.files("resultados")
