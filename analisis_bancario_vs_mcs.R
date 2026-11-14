@@ -387,3 +387,182 @@ write.csv(tabla_contactos,
 
 # Mostrar los archivos generados.
 list.files("resultados")
+
+# PARTE 3: MODELOS MPL Y LOGIT
+# 1. PREPARAR LOS DATOS PARA LOS MODELOS
+
+# Seleccionar las variables que utilizaremos.
+variables_modelo <- c(
+  "acepta", "campaign", "age", "balance",
+  "job", "marital", "education", "default",
+  "housing", "loan", "previous", "poutcome"
+)
+
+# Crear una base con las variables seleccionadas.
+datos_modelo <- banco[, variables_modelo]
+
+# Eliminar filas con valores faltantes, si existen.
+datos_modelo <- na.omit(datos_modelo)
+
+# Mostrar el numero de observaciones disponibles.
+nrow(datos_modelo)
+
+# Fijar una semilla para obtener resultados reproducibles.
+set.seed(123)
+
+# Seleccionar aleatoriamente el 80% para entrenamiento.
+filas_entrenamiento <- sample(
+  1:nrow(datos_modelo),
+  size = floor(0.80 * nrow(datos_modelo))
+)
+
+# Crear la base de entrenamiento.
+entrenamiento <- datos_modelo[filas_entrenamiento, ]
+
+# Crear la base de prueba con el 20% restante.
+prueba <- datos_modelo[-filas_entrenamiento, ]
+
+# Revisar el tamaño de las dos bases.
+nrow(entrenamiento)
+nrow(prueba)
+
+
+# 2. MODELO DE PROBABILIDAD LINEAL SIMPLE
+
+# Estimar la aceptacion usando numero de contactos.
+mpl_simple <- lm(
+  acepta ~ campaign,
+  data = entrenamiento
+)
+
+# Mostrar los resultados del modelo.
+summary(mpl_simple)
+
+
+# 3. MODELO DE PROBABILIDAD LINEAL CON CONTROLES
+
+# Estimar la aceptacion considerando otras caracteristicas.
+mpl_controles <- lm(
+  acepta ~ campaign + age + balance +
+    job + marital + education + default +
+    housing + loan + previous + poutcome,
+  data = entrenamiento
+)
+
+# Mostrar los resultados del modelo.
+summary(mpl_controles)
+
+
+# 4. MODELO LOGIT SIMPLE
+
+# Estimar la probabilidad de aceptacion con campaign.
+logit_simple <- glm(
+  acepta ~ campaign,
+  data = entrenamiento,
+  family = binomial(link = "logit")
+)
+
+# Mostrar los resultados del modelo.
+summary(logit_simple)
+
+# 5. MODELO LOGIT CON CONTROLES
+
+# Estimar la probabilidad con caracteristicas del cliente.
+logit_controles <- glm(
+  acepta ~ campaign + age + balance +
+    job + marital + education + default +
+    housing + loan + previous + poutcome,
+  data = entrenamiento,
+  family = binomial(link = "logit")
+)
+
+# Mostrar los resultados del modelo.
+summary(logit_controles)
+
+
+# 6. REVISAR LOS COEFICIENTES
+
+# Mostrar coeficientes del MPL simple.
+coef(mpl_simple)
+
+# Mostrar coeficientes del MPL con controles.
+coef(mpl_controles)
+
+# Mostrar coeficientes del Logit simple.
+coef(logit_simple)
+
+# Mostrar coeficientes del Logit con controles.
+coef(logit_controles)
+
+
+# 7. ANALIZAR LA SIGNIFICANCIA ESTADISTICA
+
+# Crear una tabla con los resultados del MPL.
+tabla_mpl <- as.data.frame(
+  summary(mpl_controles)$coefficients
+)
+
+# Mostrar los resultados.
+print(tabla_mpl)
+
+# Crear una tabla con los resultados del Logit.
+tabla_logit <- as.data.frame(
+  summary(logit_controles)$coefficients
+)
+
+# Mostrar los resultados.
+print(tabla_logit)
+
+# 8. INTERPRETAR LOS ODDS RATIOS DEL LOGIT
+
+# Transformar los coeficientes del Logit.
+odds_ratios <- exp(coef(logit_controles))
+
+# Mostrar los odds ratios.
+print(odds_ratios)
+
+# 9. COMPARAR EL AJUSTE DE LOS MODELOS
+
+# Mostrar R cuadrado del MPL simple.
+summary(mpl_simple)$r.squared
+
+# Mostrar R cuadrado del MPL con controles.
+summary(mpl_controles)$r.squared
+
+# Mostrar AIC del Logit simple.
+AIC(logit_simple)
+
+# Mostrar AIC del Logit con controles.
+AIC(logit_controles)
+
+# 10. GUARDAR LAS TABLAS DE RESULTADOS
+# Guardar los coeficientes del MPL.
+write.csv(
+  tabla_mpl,
+  "resultados/modelo_mpl.csv"
+)
+
+# Guardar los coeficientes del Logit.
+write.csv(
+  tabla_logit,
+  "resultados/modelo_logit.csv"
+)
+
+# Crear una tabla con los odds ratios.
+tabla_odds <- data.frame(
+  Variable = names(odds_ratios),
+  Odds_Ratio = as.numeric(odds_ratios)
+)
+
+# Guardar la tabla de odds ratios.
+write.csv(
+  tabla_odds,
+  "resultados/odds_ratios.csv",
+  row.names = FALSE
+)
+
+
+# 11. VERIFICAR LOS RESULTADOS
+
+# Mostrar los archivos generados.
+list.files("resultados")
