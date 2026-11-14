@@ -980,3 +980,435 @@ ggsave(
 
 # Mostrar todos los archivos generados.
 list.files("resultados")
+
+
+# PARTE 5: SEGMENTACION Y RECOMENDACIONES COMERCIALES
+# 1. PREPARAR LOS RESULTADOS
+
+# Cargar la libreria para los graficos.
+library(ggplot2)
+
+# Crear la carpeta de resultados si no existe.
+dir.create("resultados", showWarnings = FALSE)
+
+# Crear una base con los clientes de prueba.
+clientes <- prueba
+
+# Agregar la probabilidad estimada por el Logit.
+clientes$probabilidad <- as.numeric(pred_logit)
+
+# Verificar que las probabilidades sean validas.
+stopifnot(
+  nrow(clientes) == length(pred_logit),
+  all(!is.na(clientes$probabilidad)),
+  all(clientes$probabilidad >= 0),
+  all(clientes$probabilidad <= 1)
+)
+
+# Mostrar las primeras observaciones.
+head(clientes)
+
+
+# 2. CALCULAR LA PROBABILIDAD PROMEDIO
+
+# Calcular la probabilidad promedio de aceptacion.
+probabilidad_promedio <- mean(clientes$probabilidad)
+
+# Mostrar el resultado en porcentaje.
+round(probabilidad_promedio * 100, 2)
+
+# Calcular la tasa real de aceptacion.
+aceptacion_real <- mean(clientes$acepta)
+
+# Mostrar la tasa real en porcentaje.
+round(aceptacion_real * 100, 2)
+
+
+# 3. DEFINIR LOS SEGMENTOS COMERCIALES
+
+# Calcular probabilidades sobre el conjunto de entrenamiento.
+prob_entrenamiento <- predict(
+  logit_controles,
+  newdata = entrenamiento,
+  type = "response"
+)
+
+# Calcular los percentiles 33 y 67 de entrenamiento.
+limites <- quantile(
+  prob_entrenamiento,
+  probs = c(1/3, 2/3),
+  na.rm = TRUE
+)
+
+# Mostrar los limites utilizados.
+print(limites)
+
+# Crear segmentos segun la probabilidad estimada.
+clientes$segmento <- ifelse(
+  clientes$probabilidad >= limites[2],
+  "Alta",
+  ifelse(
+    clientes$probabilidad >= limites[1],
+    "Media",
+    "Baja"
+  )
+)
+
+# Ordenar los segmentos.
+clientes$segmento <- factor(
+  clientes$segmento,
+  levels = c("Baja", "Media", "Alta")
+)
+
+# Mostrar cuantos clientes hay por segmento.
+table(clientes$segmento)
+
+
+# 4. ANALIZAR LA ACEPTACION POR SEGMENTO
+
+# Contar los clientes de cada segmento.
+cantidad <- as.numeric(table(clientes$segmento))
+
+# Calcular la probabilidad promedio por segmento.
+prob_media <- aggregate(
+  probabilidad ~ segmento,
+  data = clientes,
+  FUN = mean
+)
+
+# Calcular la aceptacion real por segmento.
+tasa_real <- aggregate(
+  acepta ~ segmento,
+  data = clientes,
+  FUN = mean
+)
+
+# Crear una tabla resumen.
+tabla_segmentos <- data.frame(
+  Segmento = levels(clientes$segmento),
+  Clientes = cantidad,
+  Probabilidad_Promedio = round(
+    prob_media$probabilidad * 100, 2
+  ),
+  Aceptacion_Real = round(
+    tasa_real$acepta * 100, 2
+  )
+)
+
+# Mostrar la tabla.
+print(tabla_segmentos)
+
+# Guardar los resultados.
+write.csv(
+  tabla_segmentos,
+  "resultados/segmentacion_clientes.csv",
+  row.names = FALSE
+)
+
+
+# 5. COMPARAR CARACTERISTICAS DE LOS CLIENTES
+
+# Calcular la edad promedio por segmento.
+edad_segmento <- aggregate(
+  age ~ segmento,
+  data = clientes,
+  FUN = mean
+)
+
+# Calcular el saldo promedio por segmento.
+saldo_segmento <- aggregate(
+  balance ~ segmento,
+  data = clientes,
+  FUN = mean
+)
+
+# Calcular los contactos promedio por segmento.
+contactos_segmento <- aggregate(
+  campaign ~ segmento,
+  data = clientes,
+  FUN = mean
+)
+
+# Crear una tabla con las caracteristicas.
+tabla_perfiles <- data.frame(
+  Segmento = levels(clientes$segmento),
+  Edad_Promedio = round(edad_segmento$age, 1),
+  Saldo_Promedio = round(saldo_segmento$balance, 2),
+  Contactos_Promedio = round(
+    contactos_segmento$campaign, 2
+  )
+)
+
+# Mostrar los perfiles.
+print(tabla_perfiles)
+
+# Guardar los perfiles.
+write.csv(
+  tabla_perfiles,
+  "resultados/perfiles_clientes.csv",
+  row.names = FALSE
+)
+
+
+# 6. GRAFICO DE ACEPTACION POR SEGMENTO
+
+# Crear el grafico de aceptacion real.
+grafico_segmentos <- ggplot(
+  tabla_segmentos,
+  aes(x = Segmento, y = Aceptacion_Real,
+      fill = Segmento)
+) +
+  geom_col() +
+  geom_text(
+    aes(label = paste0(Aceptacion_Real, "%")),
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Aceptacion bancaria por segmento",
+    x = "Prioridad comercial",
+    y = "Porcentaje de aceptacion real"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Mostrar el grafico.
+print(grafico_segmentos)
+
+# Guardar el grafico.
+ggsave(
+  "resultados/grafico_segmentacion.png",
+  plot = grafico_segmentos,
+  width = 8,
+  height = 5
+)
+
+
+# 7. GRAFICO DE PROBABILIDADES POR SEGMENTO
+
+# Crear un grafico de cajas.
+grafico_probabilidades <- ggplot(
+  clientes,
+  aes(x = segmento, y = probabilidad,
+      fill = segmento)
+) +
+  geom_boxplot() +
+  labs(
+    title = "Probabilidades estimadas por segmento",
+    x = "Segmento comercial",
+    y = "Probabilidad de aceptacion"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Mostrar el grafico.
+print(grafico_probabilidades)
+
+# Guardar el grafico.
+ggsave(
+  "resultados/grafico_probabilidades.png",
+  plot = grafico_probabilidades,
+  width = 8,
+  height = 5
+)
+
+
+# 8. IDENTIFICAR VARIABLES DEL MODELO LOGIT
+
+# Extraer los coeficientes del modelo.
+coeficientes <- summary(logit_controles)$coefficients
+
+# Crear una tabla de coeficientes.
+tabla_variables <- data.frame(
+  Variable = rownames(coeficientes),
+  Coeficiente = coeficientes[, 1],
+  Valor_p = coeficientes[, 4],
+  row.names = NULL
+)
+
+# Calcular los odds ratios.
+tabla_variables$Odds_Ratio <- exp(
+  tabla_variables$Coeficiente
+)
+
+# Identificar las variables significativas al 5%.
+tabla_variables$Significativa <- ifelse(
+  tabla_variables$Valor_p < 0.05,
+  "Si",
+  "No"
+)
+
+# Excluir el intercepto para el analisis.
+tabla_variables <- tabla_variables[
+  tabla_variables$Variable != "(Intercept)", ]
+
+# Ordenar por valor p.
+tabla_variables <- tabla_variables[
+  order(tabla_variables$Valor_p), ]
+
+# Mostrar los resultados.
+print(tabla_variables)
+
+# Guardar la tabla.
+write.csv(
+  tabla_variables,
+  "resultados/variables_relevantes.csv",
+  row.names = FALSE
+)
+
+
+# 9. GRAFICO DE VARIABLES SIGNIFICATIVAS
+
+# Seleccionar los coeficientes significativos.
+variables_significativas <- subset(
+  tabla_variables,
+  Significativa == "Si"
+)
+
+# Verificar si existen variables significativas.
+if (nrow(variables_significativas) > 0) {
+  
+  # Crear el grafico de coeficientes.
+  grafico_variables <- ggplot(
+    variables_significativas,
+    aes(
+      x = reorder(Variable, Coeficiente),
+      y = Coeficiente
+    )
+  ) +
+    geom_col(fill = "steelblue") +
+    coord_flip() +
+    labs(
+      title = "Coeficientes significativos del Logit",
+      x = "Variable",
+      y = "Coeficiente estimado"
+    ) +
+    theme_minimal()
+  
+  # Mostrar el grafico.
+  print(grafico_variables)
+  
+  # Guardar el grafico.
+  ggsave(
+    "resultados/grafico_variables.png",
+    plot = grafico_variables,
+    width = 9,
+    height = 7
+  )
+}
+
+
+# 10. ANALIZAR EL GRUPO DE MAYOR PRIORIDAD
+
+# Seleccionar clientes de prioridad alta.
+clientes_alta <- subset(
+  clientes,
+  segmento == "Alta"
+)
+
+# Mostrar cuantos clientes pertenecen al grupo.
+nrow(clientes_alta)
+
+# Calcular su probabilidad promedio.
+mean(clientes_alta$probabilidad)
+
+# Calcular su aceptacion real.
+mean(clientes_alta$acepta)
+
+# Mostrar su edad promedio.
+mean(clientes_alta$age)
+
+# Mostrar su saldo promedio.
+mean(clientes_alta$balance)
+
+# Mostrar su numero promedio de contactos.
+mean(clientes_alta$campaign)
+
+
+# 11. COMPARAR LA SEGMENTACION CON EL PROMEDIO GENERAL
+
+# Calcular la aceptacion real del grupo de alta prioridad.
+tasa_alta <- mean(clientes_alta$acepta)
+
+# Calcular la aceptacion real de toda la muestra de prueba.
+tasa_general <- mean(clientes$acepta)
+
+# Calcular la diferencia en puntos porcentuales.
+diferencia_pp <- (tasa_alta - tasa_general) * 100
+
+# Mostrar la diferencia.
+round(diferencia_pp, 2)
+
+# Calcular la razon entre ambas tasas.
+lift_alta <- if (tasa_general > 0) {
+  tasa_alta / tasa_general
+} else {
+  NA_real_
+}
+
+# Mostrar la razon de aceptacion.
+round(lift_alta, 2)
+
+# Crear una tabla de comparacion.
+tabla_impacto <- data.frame(
+  Indicador = c(
+    "Aceptacion general (%)",
+    "Aceptacion segmento alto (%)",
+    "Diferencia (puntos porcentuales)",
+    "Lift segmento alto"
+  ),
+  Valor = round(c(
+    tasa_general * 100,
+    tasa_alta * 100,
+    diferencia_pp,
+    lift_alta
+  ), 2)
+)
+
+# Mostrar la tabla.
+print(tabla_impacto)
+
+# Guardar la comparacion.
+write.csv(
+  tabla_impacto,
+  "resultados/impacto_segmentacion.csv",
+  row.names = FALSE
+)
+
+
+# 12. CREAR TABLA PARA DECISIONES COMERCIALES
+
+# Crear recomendaciones iniciales por segmento.
+tabla_recomendaciones <- data.frame(
+  Segmento = c("Alta", "Media", "Baja"),
+  Estrategia = c(
+    "Priorizar contacto comercial y evaluar oferta",
+    "Realizar pruebas de campanas personalizadas",
+    "Reducir contactos masivos y evaluar otros canales"
+  )
+)
+
+# Mostrar las estrategias propuestas.
+print(tabla_recomendaciones)
+
+# Guardar las estrategias.
+write.csv(
+  tabla_recomendaciones,
+  "resultados/recomendaciones_comerciales.csv",
+  row.names = FALSE
+)
+
+
+# 13. GUARDAR RESULTADOS PARA REPRODUCIBILIDAD
+
+# Guardar las predicciones y segmentos de la muestra.
+write.csv(
+  clientes,
+  "resultados/clientes_segmentados.csv",
+  row.names = FALSE
+)
+
+# Mostrar los archivos generados.
+list.files("resultados")
+
+# Mostrar un mensaje final.
+print("Parte 5 ejecutada correctamente")
